@@ -71,7 +71,7 @@ BEGIN
     DECLARE rand_fecha DATE;
     DECLARE last_id INT;
 
-    WHILE i < 1500 DO
+    WHILE i < 500 DO
 
         SET rand_nombre = ELT(FLOOR(1 + (RAND() * 50)), 
             'Juan', 'María', 'Pedro', 'Ana', 'Luis', 'Carmen', 'José', 'Francisca', 
@@ -111,7 +111,7 @@ BEGIN
         IF ROW_COUNT() > 0 THEN
             SET last_id = LAST_INSERT_ID();
             SET rand_organo = ELT(FLOOR(1 + (RAND() * 8)), 'Hígado', 'Riñón', 'Estómago', 'Piel', 'Pulmón', 'Colon', 'Próstata', 'Tiroides');
-            SET rand_fecha = DATE_ADD('2023-01-01', INTERVAL FLOOR(RAND() * 365) DAY);
+            SET rand_fecha = DATE_ADD('2026-01-01', INTERVAL FLOOR(RAND() * 365) DAY);
             
             INSERT INTO Biopsias (id_paciente, organo, fecha_ingreso, observaciones) 
             VALUES (last_id, rand_organo, rand_fecha, 'Biopsia generada automáticamente por sistema');

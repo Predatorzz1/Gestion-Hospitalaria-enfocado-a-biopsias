@@ -46,27 +46,50 @@ function procesarAcciones($conn) {
         }
     }
 
-    // 2. Guardar Biopsia
+// 2. Guardar Biopsia (Con Estado y Fecha de Salida)
     if (isset($_POST['save_biopsia'])) {
         try {
             $idp = (int)$_POST['id_paciente']; 
             $org = $_POST['organo']; 
             $fec = $_POST['fecha_ingreso']; 
             $obs = $_POST['observaciones'];
+            $est = $_POST['estado'] ?? 'Pendiente'; 
             $idb = $_POST['id_biopsia_edit'];
 
+            // Si se concluye, se registra la fecha actual. Si no, queda vacía.
+            $fec_salida = ($est === 'Concluida') ? date('Y-m-d') : null;
+
             if (!empty($idb)) {
-                $stmt = $conn->prepare("UPDATE Biopsias SET id_paciente=?, organo=?, fecha_ingreso=?, observaciones=? WHERE id_biopsia=?");
-                $stmt->bind_param("isssi", $idp, $org, $fec, $obs, $idb);
+                $stmt = $conn->prepare("UPDATE Biopsias SET id_paciente=?, organo=?, fecha_ingreso=?, observaciones=?, estado=?, fecha_salida=? WHERE id_biopsia=?");
+                // "isssssi" = int, string, string, string, string, string(null), int
+                $stmt->bind_param("isssssi", $idp, $org, $fec, $obs, $est, $fec_salida, $idb);
             } else {
-                $stmt = $conn->prepare("INSERT INTO Biopsias (id_paciente, organo, fecha_ingreso, observaciones) VALUES (?, ?, ?, ?)");
-                $stmt->bind_param("isss", $idp, $org, $fec, $obs);
+                $stmt = $conn->prepare("INSERT INTO Biopsias (id_paciente, organo, fecha_ingreso, observaciones, estado, fecha_salida) VALUES (?, ?, ?, ?, ?, ?)");
+                // "isssss" = int, string, string, string, string, string(null)
+                $stmt->bind_param("isssss", $idp, $org, $fec, $obs, $est, $fec_salida);
             }
             $stmt->execute();
             $stmt->close();
             return ["msg" => "Operación exitosa.", "type" => "success"];
         } catch (Throwable $e) {
             return ["msg" => "Error al procesar la biopsia. Verifique los datos.", "type" => "danger"];
+        }
+    }
+    // Acción Rápida: Concluir Biopsia directamente desde la tabla
+    if (isset($_POST['conclude_biopsia'])) {
+        try {
+            $idb = (int)$_POST['id_biopsia'];
+            $fec_salida = date('Y-m-d');
+            $est = 'Concluida';
+
+            $stmt = $conn->prepare("UPDATE Biopsias SET estado=?, fecha_salida=? WHERE id_biopsia=?");
+            $stmt->bind_param("ssi", $est, $fec_salida, $idb);
+            $stmt->execute();
+            $stmt->close();
+            
+            return ["msg" => "Biopsia finalizada exitosamente.", "type" => "success"];
+        } catch (Throwable $e) {
+            return ["msg" => "Error al concluir la biopsia.", "type" => "danger"];
         }
     }
 

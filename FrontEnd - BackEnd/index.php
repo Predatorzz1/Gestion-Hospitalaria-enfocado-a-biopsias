@@ -145,7 +145,7 @@ if (isset($_SESSION['user'])) {
                             SUM(CASE WHEN DATEDIFF(fecha_expiracion, NOW()) < 0 THEN 1 ELSE 0 END) as vencidas,
                             SUM(CASE WHEN DATEDIFF(fecha_expiracion, NOW()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) as peligro,
                             SUM(CASE WHEN DATEDIFF(fecha_expiracion, NOW()) BETWEEN 6 AND 10 THEN 1 ELSE 0 END) as alerta
-                            FROM Biopsias";
+                            FROM Biopsias WHERE estado != 'Concluida'";
                         $stats = $conn->query($sqlStats)->fetch_assoc();
                     ?>
                         <div class="row">
@@ -162,8 +162,8 @@ if (isset($_SESSION['user'])) {
                                     <thead><tr><th>ID</th><th>Órgano</th><th>Vence en...</th><th>Estado</th></tr></thead>
                                     <tbody>
                                     <?php
-                                    $sqlDash = "SELECT b.*, DATEDIFF(b.fecha_expiracion, NOW()) as dias_restantes 
-                                                FROM Biopsias b ORDER BY dias_restantes ASC LIMIT 10";
+                                    $sqlDash = "SELECT b.*, DATEDIFF(b.fecha_expiracion, NOW()) as dias_restantes     
+                                        FROM Biopsias b WHERE estado != 'Concluida' ORDER BY dias_restantes ASC LIMIT 10";
                                     $resDash = $conn->query($sqlDash);
                                     while($d = $resDash->fetch_assoc()):
                                         $days = $d['dias_restantes'];
@@ -190,21 +190,25 @@ if (isset($_SESSION['user'])) {
                         $filtro = "";
                         if (!empty($_GET['q'])) {
                             $q = $conn->real_escape_string($_GET['q']);
-                            $filtro = " WHERE p.rut LIKE '%$q%' OR p.apellido LIKE '%$q%' OR b.organo LIKE '%$q%' ";
+                            $filtro = " AND (p.rut LIKE '%$q%' OR p.apellido LIKE '%$q%' OR b.organo LIKE '%$q%') ";
                         }
                     ?>
-                        <div class="card">
-                            <div class="card-header">
+                        <div class="card card-sm">
+                            <div class="card-body p-3">
                                 <form class="row">
                                     <input type="hidden" name="view" value="gestion">
-                                    <div class="col-md-5"><input type="text" name="q" class="form-control" placeholder="Buscar RUT, Apellido..." value="<?= $_GET['q']??'' ?>"></div>
+                                    <div class="col-md-6"><input type="text" name="q" class="form-control" placeholder="Buscar por RUT, Apellido u Órgano..." value="<?= $_GET['q']??'' ?>"></div>
                                     <div class="col-md-2"><button class="btn btn-default btn-block"><i class="fas fa-search"></i> Buscar</button></div>
-                                    <div class="col-md-5 text-right">
+                                    <div class="col-md-4 text-right">
                                         <button type="button" class="btn btn-secondary" data-toggle="modal" data-target="#modal-paciente">Nuevo Paciente</button>
                                         <button type="button" class="btn btn-primary" onclick="editarBiopsia()">Nueva Biopsia</button>
                                     </div>
                                 </form>
                             </div>
+                        </div>
+
+                        <div class="card card-outline card-primary">
+                            <div class="card-header"><h3 class="card-title font-weight-bold text-primary"><i class="fas fa-clock"></i> Biopsias en Curso (Pendientes)</h3></div>
                             <div class="card-body p-0 table-responsive">
                                 <table class="table table-hover text-nowrap">
                                     <thead><tr><th>ID</th><th>Paciente</th><th>Órgano</th><th>Ingreso</th><th>Acción</th></tr></thead>
@@ -212,23 +216,31 @@ if (isset($_SESSION['user'])) {
                                     <?php
                                     $sqlList = "SELECT b.*, p.rut, p.nombre, p.apellido 
                                                 FROM Biopsias b JOIN Pacientes p ON b.id_paciente=p.id_paciente 
-                                                $filtro ORDER BY b.id_biopsia DESC LIMIT 50";
+                                                WHERE b.estado != 'Concluida' $filtro ORDER BY b.id_biopsia DESC LIMIT 50";
                                     $resList = $conn->query($sqlList);
                                     while($r = $resList->fetch_assoc()):
                                     ?>
                                         <tr>
-                                            <td><?= $r['id_biopsia'] ?></td>
+                                            <td>BIO-<?= $r['id_biopsia'] ?></td>
                                             <td><?= htmlspecialchars($r['nombre'], ENT_QUOTES, 'UTF-8') ?> <?= htmlspecialchars($r['apellido'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= $r['organo'] ?></td>
                                             <td><?= date('d/m/Y', strtotime($r['fecha_ingreso'])) ?></td>
                                             <td>
-                                                <button type="button" class="btn btn-sm btn-info" onclick="editarBiopsia(<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-edit"></i></button>
+                                            <td>
+                                                <form method="post" class="d-inline" onsubmit="return confirm('¿Marcar esta biopsia como concluida?');">
+                                                    <input type="hidden" name="id_biopsia" value="<?= $r['id_biopsia'] ?>">
+                                                    <button type="submit" name="conclude_biopsia" class="btn btn-sm btn-success" title="Finalizar Trámite"><i class="fas fa-check"></i></button>
+                                                </form>
+
+                                                <button type="button" class="btn btn-sm btn-info" onclick="editarBiopsia(<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>)" title="Editar"><i class="fas fa-edit"></i></button>
+                                                
                                                 <?php if($_SESSION['rol'] == 'JEFE'): ?>
                                                 <form method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea eliminar?');">
                                                     <input type="hidden" name="id_biopsia" value="<?= $r['id_biopsia'] ?>">
-                                                    <button type="submit" name="delete_biopsia" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
+                                                    <button type="submit" name="delete_biopsia" class="btn btn-sm btn-danger" title="Eliminar"><i class="fas fa-trash"></i></button>
                                                 </form>
                                                 <?php endif; ?>
+                                            </td>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>
@@ -236,8 +248,45 @@ if (isset($_SESSION['user'])) {
                                 </table>
                             </div>
                         </div>
-  
-                    <?php 
+
+                        <div class="card card-outline card-success mt-4">
+                            <div class="card-header"><h3 class="card-title font-weight-bold text-success"><i class="fas fa-check-circle"></i> Historial de Biopsias Concluidas</h3></div>
+                            <div class="card-body p-0 table-responsive">
+                                <table class="table table-hover text-nowrap">
+                                    <thead><tr><th>ID</th><th>Paciente</th><th>Órgano</th><th>Ingreso</th><th>Fecha Termino</th><th>Estado</th><th>Acción</th></tr></thead>
+                                    <tbody>
+                                    <?php
+                                    $sqlConcluidas = "SELECT b.*, p.rut, p.nombre, p.apellido 
+                                                      FROM Biopsias b JOIN Pacientes p ON b.id_paciente=p.id_paciente 
+                                                      WHERE b.estado = 'Concluida' $filtro ORDER BY b.fecha_salida DESC LIMIT 50";
+                                    $resConc = $conn->query($sqlConcluidas);
+                                    if($resConc->num_rows == 0):
+                                        echo "<tr><td colspan='7' class='text-muted text-center p-3'>No hay biopsias finalizadas en el historial.</td></tr>";
+                                    else:
+                                        while($c = $resConc->fetch_assoc()):
+                                        ?>
+                                            <tr>
+                                                <td>BIO-<?= $c['id_biopsia'] ?></td>
+                                                <td><?= htmlspecialchars($c['nombre'], ENT_QUOTES, 'UTF-8') ?> <?= htmlspecialchars($c['apellido'], ENT_QUOTES, 'UTF-8') ?></td>
+                                                <td><?= $c['organo'] ?></td>
+                                                <td><?= date('d/m/Y', strtotime($c['fecha_ingreso'])) ?></td>
+                                                <td class="text-success font-weight-bold">
+                                                    <?= !empty($c['fecha_salida']) ? date('d/m/Y', strtotime($c['fecha_salida'])) : 'Sin fecha registrada' ?>
+                                                </td>
+                                                <td><span class="badge badge-success">Concluida</span></td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-info" onclick="editarBiopsia(<?= htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-edit"></i></button>
+                                                </td>
+                                            </tr>
+                                        <?php 
+                                        endwhile;
+                                    endif; 
+                                    ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php
                     // ---------------- VISTA USUARIOS ----------------
                     elseif ($view == 'usuarios' && $_SESSION['rol'] == 'JEFE'): 
                     ?>
@@ -300,10 +349,20 @@ if (isset($_SESSION['user'])) {
                 <select name="organo" id="organo" class="form-control mb-2">
                     <option>Hígado</option><option>Riñón</option><option>Pulmón</option><option>Estómago</option><option>Piel</option><option>Tiroides</option><option>Próstata</option>
                 </select>
+               
                 <label>Fecha Ingreso:</label>
                 <input type="date" name="fecha_ingreso" id="fecha_ingreso" class="form-control mb-2" required>
                 <label>Observaciones:</label>
-                <textarea name="observaciones" id="observaciones" class="form-control"></textarea>
+                
+                <textarea name="observaciones" id="observaciones" class="form-control"></textarea>   
+                <label>Observaciones:</label>
+                <textarea name="observaciones" id="observaciones" class="form-control mb-2"></textarea>
+                
+                <label>Estado del Trámite:</label>
+                <select name="estado" id="estado" class="form-control">
+                    <option value="Pendiente">Pendiente (En proceso)</option>
+                    <option value="Concluida">Concluida (Finalizada)</option>
+                </select>
             </div>
             <div class="modal-footer"><button type="submit" name="save_biopsia" class="btn btn-primary">Guardar</button></div>
         </form></div></div></div>
@@ -337,10 +396,12 @@ if (isset($_SESSION['user'])) {
                 $('#organo').val(data.organo);
                 $('#fecha_ingreso').val(data.fecha_ingreso);
                 $('#observaciones').val(data.observaciones);
+                $('#estado').val(data.estado); // Carga el estado actual
             } else {
                 $('#id_biopsia_edit').val('');
                 $('#fecha_ingreso').val('<?= date('Y-m-d') ?>');
                 $('#observaciones').val('');
+                $('#estado').val('Pendiente'); // Estado por defecto al crear
             }
             $('#modal-biopsia').modal('show');
         }
