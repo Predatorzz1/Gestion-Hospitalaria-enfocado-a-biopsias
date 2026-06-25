@@ -1,46 +1,46 @@
+
 <?php
+require 'logica_biopsias.php';
 session_start();
 
 
 // CONEXIÓN MYSQL
-
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_NAME', 'HospitalTalca');
 
 function getDB() {
-    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-    if ($conn->connect_error) die("Error de conexión: " . $conn->connect_error);
-    $conn->set_charset("utf8");
-    return $conn;
+    mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+    try {
+        $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+        $conn->set_charset("utf8");
+        return $conn;
+    } catch (Exception $e) {
+        die("Error crítico: No se pudo conectar a la base de datos."); 
+    }
 }
-
-
-// LÓGICA DE LOGIN (DESDE BASE DE DATOS)
 
 $error = "";
 
-// LOGIN
+// LOGIN MEJORADO
 if (isset($_POST['login'])) {
     $conn = getDB();
-    // Limpiamos entradas para evitar inyección SQL básica
-    $u = $conn->real_escape_string($_POST['username']);
-    $p = $conn->real_escape_string($_POST['password']);
+    $u = trim($_POST['username'] ?? '');
+    $p = trim($_POST['password'] ?? '');
     
-    // Consultamos a la tabla Usuarios
-    $sql = "SELECT * FROM Usuarios WHERE username = '$u' AND password = '$p'";
-    $res = $conn->query($sql);
+    // Usamos nuestra nueva función "testeable"
+    $usuario = verificarLogin($conn, $u, $p);
 
-    if ($res->num_rows > 0) {
-        $row = $res->fetch_assoc();
-        $_SESSION['user'] = $row['username'];
-        $_SESSION['rol']  = $row['rol']; 
-        $_SESSION['id']   = $row['id_usuario'];
+    if ($usuario) {
+        $_SESSION['user'] = $usuario['username'];
+        $_SESSION['rol']  = $usuario['rol']; 
+        $_SESSION['id']   = $usuario['id_usuario'];
+        
         header("Location: index.php"); 
         exit;
     } else {
-        $error = "Usuario o contraseña incorrectos.";
+        $error = "Usuario, contraseña incorrectos o error de conexión.";
     }
 }
 
@@ -51,54 +51,15 @@ if (isset($_GET['logout'])) {
     exit;
 }
 
-
-// ACCIONES
-
 $msg = ""; $msgType = "";
 if (isset($_SESSION['user'])) {
     $conn = getDB();
+    // Ejecutamos la función centralizada
+    $resultadoAccion = procesarAcciones($conn);
     
-    // Guardar Paciente
-    if (isset($_POST['save_paciente'])) {
-        $n = $conn->real_escape_string($_POST['nombre']);
-        $a = $conn->real_escape_string($_POST['apellido']);
-        $r = $conn->real_escape_string($_POST['rut']);
-        $sql = "INSERT INTO Pacientes (nombre, apellido, rut) VALUES ('$n', '$a', '$r') 
-                ON DUPLICATE KEY UPDATE nombre='$n', apellido='$a'";
-        if($conn->query($sql)) { $msg="Paciente guardado correctamente."; $msgType="success"; } 
-        else { $msg="Error: ".$conn->error; $msgType="danger"; }
-    }
-
-    // Guardar Biopsia
-    if (isset($_POST['save_biopsia'])) {
-        $idp = (int)$_POST['id_paciente']; 
-        $org = $conn->real_escape_string($_POST['organo']); 
-        $fec = $conn->real_escape_string($_POST['fecha_ingreso']); 
-        $obs = $conn->real_escape_string($_POST['observaciones']);
-        $idb = $_POST['id_biopsia_edit'];
-
-        if ($idb) {
-            $sql = "UPDATE Biopsias SET id_paciente=$idp, organo='$org', fecha_ingreso='$fec', observaciones='$obs' 
-                    WHERE id_biopsia=" . (int)$idb;
-        } else {
-            // El trigger SQL se encarga de calcular la fecha_expiracion
-            $sql = "INSERT INTO Biopsias (id_paciente, organo, fecha_ingreso, observaciones) 
-                    VALUES ($idp, '$org', '$fec', '$obs')";
-        }
-
-        if($conn->query($sql)) { $msg="Operación exitosa."; $msgType="success"; }
-        else { $msg="Error: ".$conn->error; $msgType="danger"; }
-    }
-
-    // Eliminar Biopsia 
-    if (isset($_POST['delete_biopsia'])) {
-        if ($_SESSION['rol'] == 'JEFE') {
-            $id = (int)$_POST['id_biopsia'];
-            $conn->query("DELETE FROM Biopsias WHERE id_biopsia=$id");
-            $msg="Biopsia eliminada permanentemente."; $msgType="warning";
-        } else {
-            $msg="Error: No tienes permisos para eliminar."; $msgType="danger";
-        }
+    if ($resultadoAccion) {
+        $msg = $resultadoAccion['msg'];
+        $msgType = $resultadoAccion['type'];
     }
 }
 ?>
@@ -110,7 +71,6 @@ if (isset($_SESSION['user'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="hold-transition sidebar-mini layout-fixed">
 
@@ -157,6 +117,14 @@ if (isset($_SESSION['user'])) {
                     <ul class="nav nav-pills nav-sidebar flex-column">
                         <li class="nav-item"><a href="?view=dashboard" class="nav-link <?= $view=='dashboard'?'active':'' ?>"><i class="nav-icon fas fa-tachometer-alt"></i> <p>Dashboard</p></a></li>
                         <li class="nav-item"><a href="?view=gestion" class="nav-link <?= $view=='gestion'?'active':'' ?>"><i class="nav-icon fas fa-edit"></i> <p>Gestión</p></a></li>
+
+                        <?php if($_SESSION['rol'] == 'JEFE'): ?>
+                        <li class="nav-item">
+                            <a href="?view=usuarios" class="nav-link <?= $view=='usuarios'?'active':'' ?>">
+                                <i class="nav-icon fas fa-users-cog"></i> <p>Usuarios</p>
+                            </a>
+                        </li>
+                        <?php endif; ?>
                     </ul>
                 </nav>
             </div>
@@ -173,7 +141,6 @@ if (isset($_SESSION['user'])) {
                     if ($view == 'dashboard'): 
                         $totalPac = $conn->query("SELECT COUNT(*) c FROM Pacientes")->fetch_object()->c;
                         
-                        // Lógica de conteo de alertas
                         $sqlStats = "SELECT 
                             SUM(CASE WHEN DATEDIFF(fecha_expiracion, NOW()) < 0 THEN 1 ELSE 0 END) as vencidas,
                             SUM(CASE WHEN DATEDIFF(fecha_expiracion, NOW()) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) as peligro,
@@ -189,7 +156,7 @@ if (isset($_SESSION['user'])) {
                         </div>
 
                         <div class="card card-outline card-secondary">
-                            <div class="card-header"><h3 class="card-title">Prioridad de Atención (Vencimiento Próximo)</h3></div>
+                            <div class="card-header"><h3 class="card-title">Prioridad de Atención</h3></div>
                             <div class="card-body table-responsive p-0">
                                 <table class="table table-striped text-nowrap">
                                     <thead><tr><th>ID</th><th>Órgano</th><th>Vence en...</th><th>Estado</th></tr></thead>
@@ -201,16 +168,14 @@ if (isset($_SESSION['user'])) {
                                     while($d = $resDash->fetch_assoc()):
                                         $days = $d['dias_restantes'];
                                         if ($days < 0) { $badge="danger"; $txt="VENCIDA (".abs($days)." días)"; }
-                                        elseif ($days <= 5) { $badge="orange"; $txt="PELIGRO"; }
+                                        elseif ($days <= 5) { $badge="warning"; $txt="PELIGRO"; }
                                         elseif ($days <= 10) { $badge="warning"; $txt="ALERTA"; }
                                         else { $badge="success"; $txt="OK"; }
                                     ?>
                                         <tr>
                                             <td>BIO-<?= $d['id_biopsia'] ?></td>
                                             <td><?= $d['organo'] ?></td>
-                                            <td class="font-weight-bold text-<?= $days<0?'danger': ($days<=5?'orange':'dark') ?>">
-                                                <?= $days < 0 ? 0 : $days ?> días
-                                            </td>
+                                            <td class="font-weight-bold text-<?= $days<0?'danger': ($days<=5?'orange':'dark') ?>"><?= $days < 0 ? 0 : $days ?> días</td>
                                             <td><span class="badge badge-<?= $badge ?>"><?= $txt ?></span></td>
                                         </tr>
                                     <?php endwhile; ?>
@@ -253,15 +218,52 @@ if (isset($_SESSION['user'])) {
                                     ?>
                                         <tr>
                                             <td><?= $r['id_biopsia'] ?></td>
-                                            <td><?= $r['nombre']." ".$r['apellido'] ?> <small class="text-muted">(<?= $r['rut'] ?>)</small></td>
+                                            <td><?= htmlspecialchars($r['nombre'], ENT_QUOTES, 'UTF-8') ?> <?= htmlspecialchars($r['apellido'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= $r['organo'] ?></td>
                                             <td><?= date('d/m/Y', strtotime($r['fecha_ingreso'])) ?></td>
                                             <td>
-                                                <button class="btn btn-sm btn-info" onclick='editarBiopsia(<?= json_encode($r) ?>)'><i class="fas fa-edit"></i></button>
+                                                <button type="button" class="btn btn-sm btn-info" onclick="editarBiopsia(<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-edit"></i></button>
                                                 <?php if($_SESSION['rol'] == 'JEFE'): ?>
                                                 <form method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea eliminar?');">
                                                     <input type="hidden" name="id_biopsia" value="<?= $r['id_biopsia'] ?>">
                                                     <button type="submit" name="delete_biopsia" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
+                                                </form>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+  
+                    <?php 
+                    // ---------------- VISTA USUARIOS ----------------
+                    elseif ($view == 'usuarios' && $_SESSION['rol'] == 'JEFE'): 
+                    ?>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title mt-1">Gestión de Accesos</h3>
+                                <div class="card-tools"><button type="button" class="btn btn-primary btn-sm" onclick="editarUsuario()">Nuevo Usuario</button></div>
+                            </div>
+                            <div class="card-body p-0 table-responsive">
+                                <table class="table table-hover text-nowrap">
+                                    <thead><tr><th>ID</th><th>Username</th><th>Rol</th><th>Acciones</th></tr></thead>
+                                    <tbody>
+                                    <?php
+                                    $resUsr = $conn->query("SELECT id_usuario, username, rol FROM Usuarios");
+                                    while($u = $resUsr->fetch_assoc()):
+                                    ?>
+                                        <tr>
+                                            <td><?= $u['id_usuario'] ?></td>
+                                            <td><?= htmlspecialchars($u['username'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><span class="badge badge-<?= $u['rol']=='JEFE'?'primary':'info' ?>"><?= $u['rol'] ?></span></td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-info" onclick="editarUsuario(<?= htmlspecialchars(json_encode($u), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-edit"></i></button>
+                                                <?php if($u['id_usuario'] != $_SESSION['id']): ?>
+                                                <form method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea eliminar a este usuario?');">
+                                                    <input type="hidden" name="id_usuario" value="<?= $u['id_usuario'] ?>">
+                                                    <button type="submit" name="delete_usuario" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
                                                 </form>
                                                 <?php endif; ?>
                                             </td>
@@ -299,14 +301,31 @@ if (isset($_SESSION['user'])) {
                     <option>Hígado</option><option>Riñón</option><option>Pulmón</option><option>Estómago</option><option>Piel</option><option>Tiroides</option><option>Próstata</option>
                 </select>
                 <label>Fecha Ingreso:</label>
-                <input type="date" name="fecha_ingreso" id="fecha_ingreso" class="form-control mb-2" value="<?= date('Y-m-d') ?>" required>
+                <input type="date" name="fecha_ingreso" id="fecha_ingreso" class="form-control mb-2" required>
                 <label>Observaciones:</label>
                 <textarea name="observaciones" id="observaciones" class="form-control"></textarea>
             </div>
             <div class="modal-footer"><button type="submit" name="save_biopsia" class="btn btn-primary">Guardar</button></div>
         </form></div></div></div>
 
+        <div class="modal fade" id="modal-usuario"><div class="modal-dialog"><div class="modal-content"><form method="post">
+            <div class="modal-header bg-dark"><h5 class="modal-title">Datos de Usuario</h5><button class="close" data-dismiss="modal">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" name="id_usuario_edit" id="id_usuario_edit">
+                <label>Nombre de Usuario (Login):</label>
+                <input type="text" name="username_new" id="username_new" class="form-control mb-2" required>
+                <label>Contraseña:</label>
+                <input type="text" name="password_new" id="password_new" class="form-control mb-2" required>
+                <label>Rol de Sistema:</label>
+                <select name="rol_new" id="rol_new" class="form-control mb-2" required>
+                    <option value="TEC">TEC (Médico / Operador)</option>
+                    <option value="JEFE">JEFE (Administrador)</option>
+                </select>
+            </div>
+            <div class="modal-footer"><button type="submit" name="save_usuario" class="btn btn-dark">Guardar</button></div>
+        </form></div></div></div>
     </div>
+    
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
@@ -324,6 +343,20 @@ if (isset($_SESSION['user'])) {
                 $('#observaciones').val('');
             }
             $('#modal-biopsia').modal('show');
+        }
+        function editarUsuario(data=null) {
+            if(data) {
+                $('#id_usuario_edit').val(data.id_usuario);
+                $('#username_new').val(data.username);
+                $('#password_new').val('');
+                $('#rol_new').val(data.rol);
+            } else {
+                $('#id_usuario_edit').val('');
+                $('#username_new').val('');
+                $('#password_new').val('');
+                $('#rol_new').val('TEC');
+            }
+            $('#modal-usuario').modal('show');
         }
     </script>
 <?php endif; ?>
