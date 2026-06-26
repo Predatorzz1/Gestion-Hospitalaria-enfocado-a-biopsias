@@ -118,10 +118,19 @@ if (isset($_SESSION['user'])) {
                         <li class="nav-item"><a href="?view=dashboard" class="nav-link <?= $view=='dashboard'?'active':'' ?>"><i class="nav-icon fas fa-tachometer-alt"></i> <p>Dashboard</p></a></li>
                         <li class="nav-item"><a href="?view=gestion" class="nav-link <?= $view=='gestion'?'active':'' ?>"><i class="nav-icon fas fa-edit"></i> <p>Gestión</p></a></li>
 
-                        <?php if($_SESSION['rol'] == 'JEFE'): ?>
                         <li class="nav-item">
-                            <a href="?view=usuarios" class="nav-link <?= $view=='usuarios'?'active':'' ?>">
-                                <i class="nav-icon fas fa-users-cog"></i> <p>Usuarios</p>
+                            <a href="?view=pacientes" class="nav-link <?= $view == 'pacientes' ? 'active' : '' ?>">
+                                <i class="nav-icon fas fa-users"></i>
+                                <p>Pacientes</p>
+                            </a>
+                        </li>
+
+
+                        <?php if($_SESSION['rol'] == 'JEFE'): ?>
+                        <li class="nav-item mt-2 border-top border-secondary pt-3">
+                            <a href="?view=usuarios" class="nav-link <?= $view == 'usuarios' ? 'active' : '' ?>">
+                                <i class="nav-icon fas fa-user-cog"></i>
+                                <p class="">Gestión Usuarios</p>
                             </a>
                         </li>
                         <?php endif; ?>
@@ -287,6 +296,56 @@ if (isset($_SESSION['user'])) {
                             </div>
                         </div>
                     <?php
+
+                    // ---------------- VISTA PACIENTES ----------------
+                    elseif ($view == 'pacientes'):
+                        $filtroPac = "";
+                        if (!empty($_GET['q'])) {
+                            $q = $conn->real_escape_string($_GET['q']);
+                            $filtroPac = " WHERE rut LIKE '%$q%' OR apellido LIKE '%$q%' OR nombre LIKE '%$q%' ";
+                        }
+                    ?>
+                        <div class="card card-sm">
+                            <div class="card-body p-3">
+                                <form class="row">
+                                    <input type="hidden" name="view" value="pacientes">
+                                    <div class="col-md-8"><input type="text" name="q" class="form-control" placeholder="Buscar por RUT, Nombre o Apellido..." value="<?= $_GET['q']??'' ?>"></div>
+                                    <div class="col-md-2"><button class="btn btn-default btn-block"><i class="fas fa-search"></i> Buscar</button></div>
+                                    <div class="col-md-2 text-right">
+                                        <button type="button" class="btn btn-primary btn-block" onclick="editarPaciente()">Nuevo Paciente</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="card card-outline card-info">
+                            <div class="card-header"><h3 class="card-title font-weight-bold text-info"><i class="fas fa-address-book"></i> Directorio Clínico de Pacientes</h3></div>
+                            <div class="card-body p-0 table-responsive">
+                                <table class="table table-hover text-nowrap">
+                                    <thead><tr><th>RUT</th><th>Nombre Completo</th><th>Previsión</th><th>Teléfono</th><th>Correo</th><th>Acciones</th></tr></thead>
+                                    <tbody>
+                                    <?php
+                                    $sqlPac = "SELECT * FROM Pacientes $filtroPac ORDER BY apellido ASC LIMIT 50";
+                                    $resPac = $conn->query($sqlPac);
+                                    while($p = $resPac->fetch_assoc()):
+                                    ?>
+                                        <tr>
+                                            <td><?= $p['rut'] ?></td>
+                                            <td><?= htmlspecialchars($p['nombre'].' '.$p['apellido'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><span class="badge badge-secondary"><?= $p['prevision'] ?></span></td>
+                                            <td><?= !empty($p['telefono']) ? $p['telefono'] : '<span class="text-muted">N/A</span>' ?></td>
+                                            <td><?= !empty($p['correo']) ? $p['correo'] : '<span class="text-muted">N/A</span>' ?></td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-info" onclick="editarPaciente(<?= htmlspecialchars(json_encode($p), ENT_QUOTES, 'UTF-8') ?>)" title="Editar Ficha"><i class="fas fa-edit"></i></button>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php
+
                     // ---------------- VISTA USUARIOS ----------------
                     elseif ($view == 'usuarios' && $_SESSION['rol'] == 'JEFE'): 
                     ?>
@@ -324,18 +383,67 @@ if (isset($_SESSION['user'])) {
                         </div>
                     <?php endif; ?>
                 </div>
+
             </section>
         </div>
         
-        <div class="modal fade" id="modal-paciente"><div class="modal-dialog"><div class="modal-content"><form method="post">
-            <div class="modal-header bg-secondary"><h5 class="modal-title">Registrar Paciente</h5><button class="close" data-dismiss="modal">&times;</button></div>
-            <div class="modal-body">
-                <input class="form-control mb-2" name="rut" placeholder="RUT (12345678-9)" required>
-                <input class="form-control mb-2" name="nombre" placeholder="Nombre" required>
-                <input class="form-control mb-2" name="apellido" placeholder="Apellido" required>
+        <div class="modal fade" id="modal-paciente">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary">
+                        <h4 class="modal-title">Ficha del Paciente</h4>
+                        <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    </div>
+                    <form method="post">
+                        <div class="modal-body row">
+                            <input type="hidden" name="id_paciente_edit" id="id_paciente_edit">
+                            
+                            <div class="col-md-4 form-group">
+                                <label>RUT (Sin puntos, con guion):</label>
+                                <input type="text" name="rut" id="rut_paciente" class="form-control" required placeholder="12345678-9">
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label>Nombres:</label>
+                                <input type="text" name="nombre" id="nombre_paciente" class="form-control" required>
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label>Apellidos:</label>
+                                <input type="text" name="apellido" id="apellido_paciente" class="form-control" required>
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label>Fecha de Nacimiento:</label>
+                                <input type="date" name="fecha_nacimiento" id="fecha_nacimiento" class="form-control">
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label>Previsión:</label>
+                                <select name="prevision" id="prevision" class="form-control">
+                                    <option value="FONASA">FONASA</option>
+                                    <option value="ISAPRE">ISAPRE</option>
+                                    <option value="DIPRECA">DIPRECA</option>
+                                    <option value="CAPREDENA">CAPREDENA</option>
+                                    <option value="PARTICULAR">PARTICULAR</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label>Teléfono:</label>
+                                <input type="text" name="telefono" id="telefono_paciente" class="form-control" placeholder="+569...">
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label>Correo Electrónico:</label>
+                                <input type="email" name="correo" id="correo_paciente" class="form-control">
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label>Dirección:</label>
+                                <input type="text" name="direccion" id="direccion_paciente" class="form-control">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="submit" name="save_paciente" id="btn_save_paciente" class="btn btn-primary">Guardar Paciente</button>
+                        </div>
+                    </form>
+                </div>
             </div>
-            <div class="modal-footer"><button type="submit" name="save_paciente" class="btn btn-secondary">Guardar</button></div>
-        </form></div></div></div>
+        </div>
 
         <div class="modal fade" id="modal-biopsia"><div class="modal-dialog"><div class="modal-content"><form method="post">
             <div class="modal-header bg-primary"><h5 class="modal-title">Datos Biopsia</h5><button class="close" data-dismiss="modal">&times;</button></div>
@@ -355,8 +463,6 @@ if (isset($_SESSION['user'])) {
                 <label>Observaciones:</label>
                 
                 <textarea name="observaciones" id="observaciones" class="form-control"></textarea>   
-                <label>Observaciones:</label>
-                <textarea name="observaciones" id="observaciones" class="form-control mb-2"></textarea>
                 
                 <label>Estado del Trámite:</label>
                 <select name="estado" id="estado" class="form-control">
@@ -418,6 +524,37 @@ if (isset($_SESSION['user'])) {
                 $('#rol_new').val('TEC');
             }
             $('#modal-usuario').modal('show');
+        }
+        function editarPaciente(data = null) {
+            if (data) {
+                // MODO EDICIÓN: Rellenar y bloquear RUT
+                $('#id_paciente_edit').val(data.id_paciente);
+                $('#rut_paciente').val(data.rut).prop('readonly', true);
+                $('#nombre_paciente').val(data.nombre);
+                $('#apellido_paciente').val(data.apellido);
+                $('#fecha_nacimiento').val(data.fecha_nacimiento);
+                $('#prevision').val(data.prevision);
+                $('#telefono_paciente').val(data.telefono);
+                $('#correo_paciente').val(data.correo);
+                $('#direccion_paciente').val(data.direccion);
+                
+                // Cambiar estilo del botón para UX
+                $('#btn_save_paciente').text('Actualizar Ficha').removeClass('btn-primary').addClass('btn-success');
+            } else {
+                // MODO NUEVO PACIENTE: Limpiar todo
+                $('#id_paciente_edit').val('');
+                $('#rut_paciente').val('').prop('readonly', false);
+                $('#nombre_paciente').val('');
+                $('#apellido_paciente').val('');
+                $('#fecha_nacimiento').val('');
+                $('#prevision').val('FONASA');
+                $('#telefono_paciente').val('');
+                $('#correo_paciente').val('');
+                $('#direccion_paciente').val('');
+                
+                $('#btn_save_paciente').text('Guardar Paciente').removeClass('btn-success').addClass('btn-primary');
+            }
+            $('#modal-paciente').modal('show');
         }
     </script>
 <?php endif; ?>

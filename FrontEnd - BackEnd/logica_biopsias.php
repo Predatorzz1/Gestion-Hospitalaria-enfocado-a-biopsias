@@ -32,17 +32,42 @@ function verificarLogin($conn, $username, $password) {
 function procesarAcciones($conn) {
     if (!isset($_SESSION['user'])) return null;
 
-    // 1. Guardar Paciente
+    // 1. Guardar o Editar Paciente
     if (isset($_POST['save_paciente'])) {
         try {
-            $stmt = $conn->prepare("INSERT INTO Pacientes (nombre, apellido, rut) VALUES (?, ?, ?) 
-                                    ON DUPLICATE KEY UPDATE nombre=?, apellido=?");
-            $stmt->bind_param("sssss", $_POST['nombre'], $_POST['apellido'], $_POST['rut'], $_POST['nombre'], $_POST['apellido']);
+            $idp = $_POST['id_paciente_edit'] ?? '';
+            
+            // Limpieza y normalización estricta
+            $rut = strtoupper(str_replace('.', '', trim($_POST['rut']))); // Elimina puntos y fuerza mayúscula en la K
+            $nom = mb_convert_case(trim($_POST['nombre']), MB_CASE_TITLE, "UTF-8"); // Ej: juan -> Juan
+            $ape = mb_convert_case(trim($_POST['apellido']), MB_CASE_TITLE, "UTF-8");
+            
+            // Nuevos campos
+            $fec = !empty($_POST['fecha_nacimiento']) ? $_POST['fecha_nacimiento'] : null;
+            $tel = trim($_POST['telefono'] ?? '');
+            $cor = trim($_POST['correo'] ?? '');
+            $dir = trim($_POST['direccion'] ?? '');
+            $pre = trim($_POST['prevision'] ?? 'FONASA');
+
+            if (!empty($idp)) {
+                // MODO EDICIÓN: Actualiza todo excepto el RUT (protección de llave referencial)
+                $stmt = $conn->prepare("UPDATE Pacientes SET nombre=?, apellido=?, fecha_nacimiento=?, telefono=?, correo=?, direccion=?, prevision=? WHERE id_paciente=?");
+                // "sssssssi" = 7 strings, 1 int
+                $stmt->bind_param("sssssssi", $nom, $ape, $fec, $tel, $cor, $dir, $pre, $idp);
+            } else {
+                // MODO INSERCIÓN
+                $stmt = $conn->prepare("INSERT INTO Pacientes (rut, nombre, apellido, fecha_nacimiento, telefono, correo, direccion, prevision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                // "ssssssss" = 8 strings
+                $stmt->bind_param("ssssssss", $rut, $nom, $ape, $fec, $tel, $cor, $dir, $pre);
+            }
+            
             $stmt->execute();
             $stmt->close();
-            return ["msg" => "Paciente guardado correctamente.", "type" => "success"];
+            return ["msg" => "Ficha del paciente guardada correctamente.", "type" => "success"];
+            
         } catch (Throwable $e) {
-            return ["msg" => "Error: Hubo un problema al guardar el paciente. Verifique los datos.", "type" => "danger"];
+            // El catch atrapará automáticamente si se intenta insertar un RUT duplicado (si la BD lo tiene como UNIQUE)
+            return ["msg" => "Error: No se pudo guardar. Es posible que el RUT ingresado ya pertenezca a otro paciente.", "type" => "danger"];
         }
     }
 
